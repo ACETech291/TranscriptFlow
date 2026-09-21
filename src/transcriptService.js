@@ -1,68 +1,81 @@
+import { YoutubeTranscript } from 'youtube-transcript'
+
+function cleanText(text) {
+  if (!text) return ''
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/')
+    .replace(/\n/g, ' ')
+    .trim()
+}
+
 /**
- * Fetches the transcript for a YouTube video via the backend API server.
- * The backend uses the youtube-transcript package to fetch transcripts
- * server-side, completely bypassing CORS restrictions.
+ * Fetches the transcript for a YouTube video purely client-side.
+ * Uses a fallback list of proxies to bypass YouTube's IP blocks and CORS.
  *
  * @param {string} videoId - The YouTube video ID
  * @param {string} [lang='en'] - Preferred language code
  * @returns {Promise<{transcript: Array<{start: number, duration: number, text: string}>, language: string, trackKind: string}>}
  */
 export async function fetchTranscript(videoId, lang = 'en') {
-  // Construct absolute URL so it can be passed to proxies if needed
-  const targetUrl = new URL(`/api/transcript?videoId=${encodeURIComponent(videoId)}&lang=${encodeURIComponent(lang)}`, window.location.origin).toString()
-
   const proxies = [
-    '', // Try direct first
-    'https://api.allorigins.win/raw?url=',
     'https://corsproxy.io/?',
+    'https://api.allorigins.win/raw?url=',
     'https://api.codetabs.com/v1/proxy?quest='
   ]
 
-  let lastErrorMsg = null
-
   for (const proxy of proxies) {
-    const fetchUrl = proxy ? proxy + encodeURIComponent(targetUrl) : targetUrl
-    
     try {
-      const response = await fetch(fetchUrl)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP Error ${response.status}`)
-      }
-      
-      // Verify content type before parsing
-      const contentType = response.headers.get('content-type') || ''
-      if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
-        throw new Error('Response is not JSON')
+      // Create a custom fetch that prepends the proxy
+      const proxyFetch = async (url, options) => {
+        let finalUrl
+        // Some proxies require URL-encoded target URLs
+        if (proxy.includes('allorigins') || proxy.includes('codetabs')) {
+           finalUrl = proxy + encodeURIComponent(url)
+        } else {
+           finalUrl = proxy + url
+        }
+
+        const res = await fetch(finalUrl, options)
+        if (!res.ok) throw new Error(`Proxy HTTP error ${res.status}`)
+        return res
       }
 
-      let data
-      try {
-        data = await response.json()
-      } catch (parseError) {
-        throw new Error('Không thể tải dữ liệu từ máy chủ proxy hoặc video không có phụ đề')
+      // Fetch transcript using the proxy fetcher
+      const transcript = await YoutubeTranscript.fetchTranscript(videoId, { 
+        lang, 
+        fetch: proxyFetch 
+      })
+
+      if (!transcript || transcript.length === 0) {
+        throw new Error('Empty transcript')
       }
 
-      // Check for errors returned by the actual API
-      if (data.error) {
-        throw new Error(data.error)
+      // Format the transcript to match the previous structure
+      const formatted = transcript.map(item => ({
+        start: item.offset / 1000,
+        duration: item.duration / 1000,
+        text: cleanText(item.text)
+      }))
+
+      return {
+        transcript: formatted,
+        language: lang || 'Auto-detected',
+        trackKind: 'Auto-detected'
       }
 
-      if (!data.transcript || data.transcript.length === 0) {
-        throw new Error('Không có phụ đề cho video này hoặc video không bật phụ đề công khai.')
-      }
-
-      return data
     } catch (err) {
-      // Record the error but continue trying the next proxy
-      lastErrorMsg = err.message === 'Response is not JSON' || err.message.includes('Không thể tải') 
-        ? 'Không thể tải dữ liệu từ máy chủ proxy hoặc video không có phụ đề'
-        : err.message
+      // If it fails, continue to the next proxy
+      console.warn(`Proxy ${proxy} failed:`, err.message)
     }
   }
 
-  // If all proxies failed
-  throw new Error(
-    lastErrorMsg || 'Không thể tải dữ liệu từ máy chủ proxy hoặc video không có phụ đề'
-  )
+  // If all proxies failed, throw a friendly Vietnamese error
+  throw new Error('Không thể tải dữ liệu từ máy chủ proxy hoặc video không có phụ đề')
 }

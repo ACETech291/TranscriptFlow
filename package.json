@@ -4,9 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,vite -c blue,green \"node server.mjs\" \"vite\"",
+    "dev": "vite",
     "dev:vite": "vite",
-    "dev:api": "node server.mjs",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
