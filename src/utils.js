@@ -8,31 +8,35 @@
  */
 export function extractVideoId(url) {
   if (!url || typeof url !== 'string') return null
-
   const trimmed = url.trim()
 
   // Direct video ID (11 chars, alphanumeric + - _)
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed
 
-  const patterns = [
-    // youtu.be/VIDEO_ID
-    /(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})/,
-    // youtube.com/watch?v=VIDEO_ID
-    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/,
-    // youtube.com/embed/VIDEO_ID
-    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
-    // youtube.com/v/VIDEO_ID
-    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/v\/([a-zA-Z0-9_-]{11})/,
-    // youtube.com/shorts/VIDEO_ID
-    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
-    // youtube.com/live/VIDEO_ID
-    /(?:https?:\/\/)?(?:www\.)?youtube\.com\/live\/([a-zA-Z0-9_-]{11})/,
-  ]
-
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern)
-    if (match?.[1]) return match[1]
+  try {
+    // Try native URL parsing first
+    const urlObj = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    let v = null;
+    if (urlObj.hostname.includes('youtube.com')) {
+      if (urlObj.pathname === '/watch') {
+        v = urlObj.searchParams.get('v');
+      } else {
+        const match = urlObj.pathname.match(/^\/(?:embed|v|shorts|live)\/([a-zA-Z0-9_-]{11})/);
+        if (match) v = match[1];
+      }
+    } else if (urlObj.hostname.includes('youtu.be')) {
+      const match = urlObj.pathname.match(/^\/([a-zA-Z0-9_-]{11})/);
+      if (match) v = match[1];
+    }
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+  } catch (e) {
+    // URL parsing failed, fallback to regex
   }
+
+  // Fallback regex that stops at '&' or '?' to avoid query params
+  const fallbackRegex = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|live\/|watch\?.*v=))([a-zA-Z0-9_-]{11})(?:[&?]|$)/;
+  const match = trimmed.match(fallbackRegex);
+  if (match?.[1]) return match[1];
 
   return null
 }
