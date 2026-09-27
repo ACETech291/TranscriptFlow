@@ -105,7 +105,6 @@ export async function fetchTranscript(videoId, lang = 'vi') {
   // --- Strategy 1: Call Backend / Serverless API endpoint ---
   const apiUrls = [
     `/api/transcript?videoId=${videoId}${lang ? `&lang=${lang}` : ''}`,
-    `/TranscriptFlow/api/transcript?videoId=${videoId}${lang ? `&lang=${lang}` : ''}`,
     `${window.location.origin}/api/transcript?videoId=${videoId}${lang ? `&lang=${lang}` : ''}`
   ]
 
@@ -117,17 +116,10 @@ export async function fetchTranscript(videoId, lang = 'vi') {
         if (data.transcript && Array.isArray(data.transcript) && data.transcript.length > 0) {
           return data
         }
-      } else if (res.status === 404) {
-        const data = await res.json().catch(() => ({}))
-        if (data.error && data.error.includes('không có phụ đề')) {
-          throw new Error('Video này không có phụ đề hoặc tác giả đã tắt tính năng phụ đề.')
-        }
       }
     } catch (err) {
-      if (err.message && err.message.includes('không có phụ đề')) {
-        throw err
-      }
-      // If endpoint is not found (e.g. 404 on purely static GitHub Pages), continue to Strategy 2
+      console.warn(`[transcriptService] Strategy 1 failed for ${apiUrl}:`, err.message)
+      // Continue to Strategy 2
     }
   }
 

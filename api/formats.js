@@ -28,14 +28,27 @@ export default async function handler(req, res) {
   }
 
   try {
-    const resp = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    const resp = await fetch('https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)'
+        'User-Agent': 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',
+        'X-YouTube-Client-Name': '5',
+        'X-YouTube-Client-Version': '20.10.4'
       },
       body: JSON.stringify({
-        context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } },
+        context: {
+          client: {
+            clientName: 'IOS',
+            clientVersion: '20.10.4',
+            deviceMake: 'Apple',
+            deviceModel: 'iPhone16,2',
+            osName: 'iOS',
+            osVersion: '18.3.2.22D82',
+            hl: 'vi',
+            gl: 'VN'
+          }
+        },
         videoId: id
       })
     })

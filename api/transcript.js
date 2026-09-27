@@ -1,3 +1,4 @@
+import { getSubtitles } from 'youtube-caption-extractor'
 import { YoutubeTranscript } from 'youtube-transcript'
 
 function cleanText(text) {
@@ -79,9 +80,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing videoId parameter' })
   }
 
-  // Strategy 1: YouTube Android InnerTube API (Fast & Reliable, works for Auto/ASR & Manual)
+  // Strategy 1: youtube-caption-extractor (Bypasses Vercel/AWS datacenter IP blocking via youtubei.googleapis.com multi-client profiles)
   try {
-    const resp = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    const subs = await getSubtitles({ videoID: id, lang })
+    if (subs && subs.length > 0) {
+      const transcript = subs.map((item) => ({
+        start: parseFloat(item.start),
+        duration: parseFloat(item.dur),
+        text: cleanText(item.text)
+      }))
+
+      return res.status(200).json({
+        transcript,
+        language: lang,
+        trackKind: 'Auto/Manual'
+      })
+    }
+  } catch (err) {
+    console.warn('[Vercel api/transcript] Strategy 1 failed, trying fallback:', err.message)
+  }
+
+  // Strategy 2: Direct InnerTube Android / Mobile fallback
+  try {
+    const resp = await fetch('https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -104,7 +125,11 @@ export default async function handler(req, res) {
           tracks[0]
 
         if (preferred?.baseUrl) {
-          const xmlResp = await fetch(preferred.baseUrl)
+          const xmlResp = await fetch(preferred.baseUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+          })
           if (xmlResp.ok) {
             const xml = await xmlResp.text()
             const transcript = parseTranscriptXml(xml)
@@ -120,17 +145,17 @@ export default async function handler(req, res) {
       }
     }
   } catch (err) {
-    console.warn('[Vercel api/transcript] InnerTube failed, trying fallback...', err.message)
+    console.warn('[Vercel api/transcript] Strategy 2 failed:', err.message)
   }
 
-  // Strategy 2: youtube-transcript fallback
+  // Strategy 3: youtube-transcript
   try {
     const data = await YoutubeTranscript.fetchTranscript(id, lang ? { lang } : undefined)
     if (data && data.length > 0) {
       const transcript = data.map((item) => ({
         start: item.offset / 1000,
         duration: item.duration / 1000,
-        text: item.text
+        text: cleanText(item.text)
       }))
 
       return res.status(200).json({
@@ -140,7 +165,7 @@ export default async function handler(req, res) {
       })
     }
   } catch (err) {
-    console.warn('[Vercel api/transcript] youtube-transcript fallback failed:', err.message)
+    console.warn('[Vercel api/transcript] Strategy 3 failed:', err.message)
   }
 
   return res.status(404).json({
