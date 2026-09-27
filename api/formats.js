@@ -16,8 +16,7 @@ export default async function handler(req, res) {
   )
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end()
-    return
+    return res.status(200).end()
   }
 
   const { videoId, v } = req.query
@@ -27,6 +26,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing videoId' })
   }
 
+  // =========================================================================
+  // NGUỒN 1: youtubei.googleapis.com với iOS Client
+  // =========================================================================
   try {
     const resp = await fetch('https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
@@ -50,97 +52,274 @@ export default async function handler(req, res) {
           }
         },
         videoId: id
+      }),
+      signal: AbortSignal.timeout(5000)
+    })
+
+    if (resp.ok) {
+      const data = await resp.json()
+      const title = data.videoDetails?.title || 'Video'
+      const author = data.videoDetails?.author || 'YouTube'
+      const duration = parseInt(data.videoDetails?.lengthSeconds || '0', 10)
+      const thumbnail = data.videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || ''
+      const streamingData = data.streamingData || {}
+
+      const combined = (streamingData.formats || []).map((f) => {
+        const sizeBytes = parseInt(f.contentLength || '0', 10)
+        return {
+          itag: f.itag,
+          quality: f.qualityLabel || '360p',
+          container: 'mp4',
+          mimeType: f.mimeType?.split(';')[0],
+          hasAudio: true,
+          fps: f.fps || 30,
+          sizeBytes,
+          formattedSize: formatBytes(sizeBytes),
+          url: f.url
+        }
       })
-    })
 
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: 'Không thể lấy thông tin video từ YouTube' })
-    }
+      const adaptive = streamingData.adaptiveFormats || []
+      const seenQualities = new Set()
+      const videoFormats = []
 
-    const data = await resp.json()
-    const title = data.videoDetails?.title || 'Video'
-    const author = data.videoDetails?.author || 'YouTube'
-    const duration = parseInt(data.videoDetails?.lengthSeconds || '0', 10)
-    const thumbnail = data.videoDetails?.thumbnail?.thumbnails?.slice(-1)[0]?.url || ''
-
-    const streamingData = data.streamingData || {}
-
-    // 1. Progressive streams (Video + Audio combined)
-    const combined = (streamingData.formats || []).map((f) => {
-      const sizeBytes = parseInt(f.contentLength || '0', 10)
-      return {
-        itag: f.itag,
-        quality: f.qualityLabel || '360p',
-        container: 'mp4',
-        mimeType: f.mimeType?.split(';')[0],
-        hasAudio: true,
-        fps: f.fps || 30,
-        sizeBytes,
-        formattedSize: formatBytes(sizeBytes),
-        url: f.url
+      for (const f of adaptive) {
+        if (f.mimeType && f.mimeType.startsWith('video/') && f.qualityLabel) {
+          if (!seenQualities.has(f.qualityLabel)) {
+            seenQualities.add(f.qualityLabel)
+            const sizeBytes = parseInt(f.contentLength || '0', 10)
+            const container = f.mimeType.includes('webm') ? 'webm' : 'mp4'
+            videoFormats.push({
+              itag: f.itag,
+              quality: f.qualityLabel,
+              container,
+              mimeType: f.mimeType.split(';')[0],
+              hasAudio: false,
+              fps: f.fps || 30,
+              sizeBytes,
+              formattedSize: formatBytes(sizeBytes),
+              url: f.url
+            })
+          }
+        }
       }
-    })
 
-    // 2. Video streams (Adaptive)
-    const adaptive = streamingData.adaptiveFormats || []
-    const seenQualities = new Set()
-    const videoFormats = []
+      const seenAudio = new Set()
+      const audioFormats = []
 
-    for (const f of adaptive) {
-      if (f.mimeType && f.mimeType.startsWith('video/') && f.qualityLabel) {
-        if (!seenQualities.has(f.qualityLabel)) {
-          seenQualities.add(f.qualityLabel)
-          const sizeBytes = parseInt(f.contentLength || '0', 10)
-          const container = f.mimeType.includes('webm') ? 'webm' : 'mp4'
-          videoFormats.push({
-            itag: f.itag,
-            quality: f.qualityLabel,
-            container,
-            mimeType: f.mimeType.split(';')[0],
-            hasAudio: false,
+      for (const f of adaptive) {
+        if (f.mimeType && f.mimeType.startsWith('audio/mp4')) {
+          const bitrate = Math.round((f.bitrate || 0) / 1000)
+          if (!seenAudio.has(bitrate)) {
+            seenAudio.add(bitrate)
+            const sizeBytes = parseInt(f.contentLength || '0', 10)
+            audioFormats.push({
+              itag: f.itag,
+              quality: `${bitrate} kbps`,
+              container: 'm4a',
+              mimeType: f.mimeType.split(';')[0],
+              bitrate,
+              sizeBytes,
+              formattedSize: formatBytes(sizeBytes),
+              url: f.url
+            })
+          }
+        }
+      }
+
+      if (videoFormats.length > 0 || audioFormats.length > 0 || combined.length > 0) {
+        return res.status(200).json({
+          title,
+          author,
+          duration,
+          thumbnail,
+          combined,
+          videoFormats,
+          audioFormats
+        })
+      }
+    }
+  } catch (err) {
+    // Continue to fallback
+  }
+
+  // =========================================================================
+  // NGUỒN 2: Invidious Instances Fallback
+  // =========================================================================
+  const invidiousInstances = [
+    'https://invidious.f5.si',
+    'https://invidious.nerdvpn.de',
+    'https://inv.nadeko.net',
+    'https://invidious.tiekoetter.com',
+    'https://yt.artemislena.eu'
+  ]
+
+  for (const inst of invidiousInstances) {
+    try {
+      const invRes = await fetch(`${inst}/api/v1/videos/${id}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(4500)
+      })
+
+      if (invRes.ok) {
+        const d = await invRes.json()
+        const title = d.title || 'Video'
+        const author = d.author || 'YouTube'
+        const duration = parseInt(d.lengthSeconds || '0', 10)
+        const thumbnail = d.videoThumbnails?.slice(-1)[0]?.url || ''
+
+        const combined = (d.formatStreams || []).map((f, idx) => {
+          const sizeBytes = parseInt(f.size || '0', 10)
+          return {
+            itag: f.itag || 18 + idx,
+            quality: f.qualityLabel || f.resolution || '360p',
+            container: f.container || 'mp4',
+            mimeType: f.type?.split(';')[0] || 'video/mp4',
+            hasAudio: true,
             fps: f.fps || 30,
             sizeBytes,
             formattedSize: formatBytes(sizeBytes),
             url: f.url
+          }
+        })
+
+        const seenQualities = new Set()
+        const videoFormats = []
+        const seenAudio = new Set()
+        const audioFormats = []
+
+        for (const f of d.adaptiveFormats || []) {
+          const type = f.type || ''
+          const sizeBytes = parseInt(f.clen || f.size || '0', 10)
+
+          if (type.startsWith('video/') && f.qualityLabel) {
+            if (!seenQualities.has(f.qualityLabel)) {
+              seenQualities.add(f.qualityLabel)
+              videoFormats.push({
+                itag: f.itag || Math.floor(Math.random() * 1000),
+                quality: f.qualityLabel,
+                container: f.container || (type.includes('webm') ? 'webm' : 'mp4'),
+                mimeType: type.split(';')[0],
+                hasAudio: false,
+                fps: f.fps || 30,
+                sizeBytes,
+                formattedSize: formatBytes(sizeBytes),
+                url: f.url
+              })
+            }
+          } else if (type.startsWith('audio/')) {
+            const bitrate = Math.round((f.bitrate || 0) / 1000) || 128
+            if (!seenAudio.has(bitrate)) {
+              seenAudio.add(bitrate)
+              audioFormats.push({
+                itag: f.itag || Math.floor(Math.random() * 1000),
+                quality: `${bitrate} kbps`,
+                container: f.container || 'm4a',
+                mimeType: type.split(';')[0],
+                bitrate,
+                sizeBytes,
+                formattedSize: formatBytes(sizeBytes),
+                url: f.url
+              })
+            }
+          }
+        }
+
+        if (videoFormats.length > 0 || audioFormats.length > 0 || combined.length > 0) {
+          return res.status(200).json({
+            title,
+            author,
+            duration,
+            thumbnail,
+            combined,
+            videoFormats,
+            audioFormats
           })
         }
       }
+    } catch (err) {
+      // Continue next instance
     }
-
-    // 3. Audio streams
-    const seenAudio = new Set()
-    const audioFormats = []
-
-    for (const f of adaptive) {
-      if (f.mimeType && f.mimeType.startsWith('audio/mp4')) {
-        const bitrate = Math.round((f.bitrate || 0) / 1000)
-        if (!seenAudio.has(bitrate)) {
-          seenAudio.add(bitrate)
-          const sizeBytes = parseInt(f.contentLength || '0', 10)
-          audioFormats.push({
-            itag: f.itag,
-            quality: `${bitrate} kbps`,
-            container: 'm4a',
-            mimeType: f.mimeType.split(';')[0],
-            bitrate,
-            sizeBytes,
-            formattedSize: formatBytes(sizeBytes),
-            url: f.url
-          })
-        }
-      }
-    }
-
-    return res.status(200).json({
-      title,
-      author,
-      duration,
-      thumbnail,
-      combined,
-      videoFormats,
-      audioFormats
-    })
-  } catch (err) {
-    return res.status(500).json({ error: err.message || 'Lỗi khi tải thông tin định dạng' })
   }
+
+  // =========================================================================
+  // NGUỒN 3: Piped Instances Fallback
+  // =========================================================================
+  const pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.tokhmi.xyz',
+    'https://piped-api.garudalinux.org',
+    'https://api.piped.privacydev.net'
+  ]
+
+  for (const inst of pipedInstances) {
+    try {
+      const pRes = await fetch(`${inst}/streams/${id}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(4500)
+      })
+
+      if (pRes.ok) {
+        const d = await pRes.json()
+        const title = d.title || 'Video'
+        const author = d.uploader || 'YouTube'
+        const duration = parseInt(d.duration || '0', 10)
+        const thumbnail = d.thumbnailUrl || ''
+
+        const seenQualities = new Set()
+        const videoFormats = []
+        for (const f of d.videoStreams || []) {
+          if (f.quality && !seenQualities.has(f.quality)) {
+            seenQualities.add(f.quality)
+            const sizeBytes = parseInt(f.contentLength || '0', 10)
+            videoFormats.push({
+              itag: f.itag || Math.floor(Math.random() * 1000),
+              quality: f.quality,
+              container: f.format?.toLowerCase() || 'mp4',
+              mimeType: f.mimeType || 'video/mp4',
+              hasAudio: !f.videoOnly,
+              fps: f.fps || 30,
+              sizeBytes,
+              formattedSize: formatBytes(sizeBytes),
+              url: f.url
+            })
+          }
+        }
+
+        const seenAudio = new Set()
+        const audioFormats = []
+        for (const f of d.audioStreams || []) {
+          const bitrate = Math.round((f.bitrate || 0) / 1000) || 128
+          if (!seenAudio.has(bitrate)) {
+            seenAudio.add(bitrate)
+            const sizeBytes = parseInt(f.contentLength || '0', 10)
+            audioFormats.push({
+              itag: f.itag || Math.floor(Math.random() * 1000),
+              quality: `${bitrate} kbps`,
+              container: f.format?.toLowerCase() || 'm4a',
+              mimeType: f.mimeType || 'audio/mp4',
+              bitrate,
+              sizeBytes,
+              formattedSize: formatBytes(sizeBytes),
+              url: f.url
+            })
+          }
+        }
+
+        return res.status(200).json({
+          title,
+          author,
+          duration,
+          thumbnail,
+          combined: [],
+          videoFormats,
+          audioFormats
+        })
+      }
+    } catch (err) {
+      // Continue next instance
+    }
+  }
+
+  return res.status(500).json({ error: 'Không thể tải thông tin định dạng video.' })
 }
