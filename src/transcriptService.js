@@ -34,15 +34,15 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
 }
 
 /**
- * Parse transcript XML (supporting srv3 and classic formats)
+ * 1. Parse XML transcript (srv1, srv3, timedtext classic)
  */
-function parseTranscriptXml(xmlText) {
+export function parseTranscriptXml(xmlText) {
   if (!xmlText || typeof xmlText !== 'string') return []
   if (xmlText.includes("We're sorry") || xmlText.includes('blocking us')) return []
 
   const results = []
 
-  // 1. srv3 format: <p t="ms" d="ms"><s>word</s>...</p>
+  // srv3: <p t="ms" d="ms"><s>word</s></p>
   const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g
   let pMatch
   while ((pMatch = pRegex.exec(xmlText)) !== null) {
@@ -71,11 +71,11 @@ function parseTranscriptXml(xmlText) {
 
   if (results.length > 0) return results
 
-  // 2. classic format: <text start="s" dur="s">content</text>
-  const regex = /<text start="([^"]*)" dur="([^"]*)">([^<]*)<\/text>/g
+  // srv1: <text start="s" dur="s">content</text>
+  const regex = /<text\s+start="([^"]*)"\s+dur="([^"]*)"[^>]*>([\s\S]*?)<\/text>/g
   let match
   while ((match = regex.exec(xmlText)) !== null) {
-    const text = cleanText(match[3])
+    const text = cleanText(match[3].replace(/<[^>]+>/g, ''))
     if (text) {
       results.push({
         start: parseFloat(match[1]) || 0,
@@ -89,36 +89,56 @@ function parseTranscriptXml(xmlText) {
 }
 
 /**
- * Parse WebVTT subtitle format
+ * 2. Parse WebVTT subtitle format (chuẩn WebVTT từ Invidious, Piped)
  */
-function parseVtt(vttText) {
+export function parseWebVTT(vttText) {
   if (!vttText || typeof vttText !== 'string') return []
+  const normalized = vttText.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const results = []
-  const blocks = vttText.split(/\n\r?\n/)
-  for (const block of blocks) {
-    const lines = block.split(/\n\r?/).map((l) => l.trim()).filter(Boolean)
-    const timeLine = lines.find((l) => l.includes('-->'))
-    if (!timeLine) continue
-    const parts = timeLine.split('-->').map((s) => s.trim())
-    if (parts.length < 2) continue
 
-    const parseTime = (t) => {
-      const match = t.match(/(\d+:)?(\d+):(\d+(\.\d+)?)/)
-      if (!match) return 0
-      const hours = match[1] ? parseFloat(match[1].replace(':', '')) : 0
-      const mins = parseFloat(match[2])
-      const secs = parseFloat(match[3])
-      return hours * 3600 + mins * 60 + secs
+  const parseTimestamp = (str) => {
+    if (!str) return 0
+    const parts = str.trim().split(':')
+    if (parts.length === 3) {
+      const h = parseFloat(parts[0]) || 0
+      const m = parseFloat(parts[1]) || 0
+      const s = parseFloat(parts[2].replace(',', '.')) || 0
+      return h * 3600 + m * 60 + s
+    } else if (parts.length === 2) {
+      const m = parseFloat(parts[0]) || 0
+      const s = parseFloat(parts[1].replace(',', '.')) || 0
+      return m * 60 + s
     }
+    return 0
+  }
 
-    const start = parseTime(parts[0])
-    const end = parseTime(parts[1])
-    const textLines = lines.slice(lines.indexOf(timeLine) + 1).filter((l) => !l.startsWith('NOTE') && !l.startsWith('STYLE'))
-    const text = cleanText(textLines.join(' ').replace(/<[^>]+>/g, ''))
+  const blocks = normalized.split(/\n\n+/)
+  for (const block of blocks) {
+    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean)
+    const timeLineIndex = lines.findIndex((l) => l.includes('-->'))
+    if (timeLineIndex === -1) continue
+
+    const timeLine = lines[timeLineIndex]
+    const [rawStart, rawEndWithSettings] = timeLine.split('-->').map((s) => s.trim())
+    if (!rawStart || !rawEndWithSettings) continue
+
+    const rawEnd = rawEndWithSettings.split(/\s+/)[0]
+    const start = parseTimestamp(rawStart)
+    const end = parseTimestamp(rawEnd)
+    const duration = Math.max(0, parseFloat((end - start).toFixed(3)))
+
+    const textLines = lines.slice(timeLineIndex + 1).filter(
+      (l) => !l.startsWith('NOTE') && !l.startsWith('STYLE')
+    )
+    const rawContent = textLines.join(' ')
+      .replace(/<[^>]+>/g, '') // loại bỏ các thẻ <v ...>, <c>, timestamp tags
+      .trim()
+
+    const text = cleanText(rawContent)
     if (text) {
       results.push({
         start,
-        duration: Math.max(0, end - start),
+        duration,
         text
       })
     }
@@ -127,13 +147,62 @@ function parseVtt(vttText) {
 }
 
 /**
+ * 3. Parse JSON3 format từ YouTube (events / segs)
+ */
+export function parseJson3(jsonInput) {
+  try {
+    const data = typeof jsonInput === 'string' ? JSON.parse(jsonInput) : jsonInput
+    const events = data?.events || []
+    const results = []
+    for (const ev of events) {
+      if (!ev.segs || ev.segs.length === 0) continue
+      const start = (ev.tStartMs || 0) / 1000
+      const duration = (ev.dDurationMs || 0) / 1000
+      let text = ev.segs.map((s) => s.utf8 || '').join('')
+      text = cleanText(text)
+      if (text && text !== '\n') {
+        results.push({ start, duration, text })
+      }
+    }
+    return results
+  } catch (e) {
+    return []
+  }
+}
+
+/**
+ * Bộ nhận diện và parser đa định dạng (Universal Subtitle Parser)
+ */
+export function parseUniversalSubtitle(content) {
+  if (!content) return []
+  if (typeof content === 'object') {
+    const jRes = parseJson3(content)
+    if (jRes.length > 0) return jRes
+  }
+  const str = String(content).trim()
+  if (str.startsWith('{') && str.endsWith('}')) {
+    const jRes = parseJson3(str)
+    if (jRes.length > 0) return jRes
+  }
+  if (str.includes('-->') || str.startsWith('WEBVTT')) {
+    const vRes = parseWebVTT(str)
+    if (vRes.length > 0) return vRes
+  }
+  if (str.includes('<p') || str.includes('<text')) {
+    const xRes = parseTranscriptXml(str)
+    if (xRes.length > 0) return xRes
+  }
+  return parseWebVTT(str) || parseTranscriptXml(str) || parseJson3(str) || []
+}
+
+/**
  * Fetches transcript for a YouTube video.
  *
  * Multi-layer Strategy:
  * 1. Backend serverless API (/api/transcript)
- * 2. Client-side Invidious Public Instances
- * 3. Client-side Piped Instances
- * 4. Client-side InnerTube Android API via local proxy / public CORS proxies
+ * 2. Client-side Invidious Public Instances (hỗ trợ parse WebVTT)
+ * 3. Client-side Piped Instances (hỗ trợ parse WebVTT)
+ * 4. youtubetranscript qua Public GET Proxies (chỉ dùng lệnh GET, loại bỏ toàn bộ POST)
  */
 export async function fetchTranscript(videoId, lang = 'vi') {
   if (!videoId) {
@@ -161,17 +230,17 @@ export async function fetchTranscript(videoId, lang = 'vi') {
       }
     } catch (err) {
       console.warn(`[transcriptService] Strategy 1 failed for ${apiUrl}:`, err.message)
-      // Continue to next strategy (do not stop!)
     }
   }
 
-  // --- Strategy 2: Client-side Invidious Instances (Direct CORS) ---
+  // --- Strategy 2: Client-side Invidious Instances (Direct CORS & WebVTT support) ---
   const invidiousInstances = [
-    'https://invidious.f5.si',
-    'https://invidious.nerdvpn.de',
     'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://invidious.f5.si',
     'https://invidious.tiekoetter.com',
-    'https://yt.artemislena.eu'
+    'https://yt.artemislena.eu',
+    'https://vid.puffyan.us'
   ]
 
   for (const inst of invidiousInstances) {
@@ -182,9 +251,10 @@ export async function fetchTranscript(videoId, lang = 'vi') {
         const captions = invData.captions || []
         if (captions.length > 0) {
           const match =
-            captions.find((c) => c.language_code === lang) ||
-            captions.find((c) => c.language_code?.startsWith(lang)) ||
-            captions.find((c) => c.language_code === 'vi' || c.language_code === 'en') ||
+            captions.find((c) => (c.languageCode || c.language_code) === lang) ||
+            captions.find((c) => (c.languageCode || c.language_code)?.startsWith(lang)) ||
+            captions.find((c) => (c.languageCode || c.language_code) === 'vi') ||
+            captions.find((c) => (c.languageCode || c.language_code) === 'en') ||
             captions[0]
 
           if (match?.url) {
@@ -192,11 +262,11 @@ export async function fetchTranscript(videoId, lang = 'vi') {
             const subRes = await fetchWithTimeout(subUrl, {}, 4500)
             if (subRes.ok) {
               const content = await subRes.text()
-              const transcript = content.includes('WEBVTT') ? parseVtt(content) : parseTranscriptXml(content)
+              const transcript = parseUniversalSubtitle(content)
               if (transcript.length > 0) {
                 return {
                   transcript,
-                  language: match.language_code || lang,
+                  language: match.languageCode || match.language_code || lang,
                   trackKind: match.label || 'Invidious'
                 }
               }
@@ -205,7 +275,7 @@ export async function fetchTranscript(videoId, lang = 'vi') {
         }
       }
     } catch (err) {
-      // Continue next instance
+      // Tiếp tục instance khác
     }
   }
 
@@ -234,7 +304,7 @@ export async function fetchTranscript(videoId, lang = 'vi') {
             const subRes = await fetchWithTimeout(match.url, {}, 4500)
             if (subRes.ok) {
               const content = await subRes.text()
-              const transcript = content.includes('WEBVTT') ? parseVtt(content) : parseTranscriptXml(content)
+              const transcript = parseUniversalSubtitle(content)
               if (transcript.length > 0) {
                 return {
                   transcript,
@@ -247,85 +317,35 @@ export async function fetchTranscript(videoId, lang = 'vi') {
         }
       }
     } catch (err) {
-      // Continue next instance
+      // Tiếp tục instance khác
     }
   }
 
-  // --- Strategy 4: InnerTube Android API via Local or Public Proxy ---
-  const proxyTargets = [
-    { type: 'local', prefix: '/api/yt' },
-    { type: 'public', prefix: 'https://api.allorigins.win/raw?url=' },
-    { type: 'public', prefix: 'https://api.codetabs.com/v1/proxy?quest=' },
-    { type: 'public', prefix: 'https://corsproxy.io/?' }
+  // --- Strategy 4: youtubetranscript.com qua Public GET Proxies (CHỈ DÙNG GET) ---
+  const getProxies = [
+    (target) => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+    (target) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(target)}`,
+    (target) => `https://corsproxy.io/?${encodeURIComponent(target)}`
   ]
 
-  for (const proxy of proxyTargets) {
+  const targetUrl = `https://youtubetranscript.com/?server_vid2=${videoId}`
+  for (const proxyWrap of getProxies) {
     try {
-      const innertubeEndpoint = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false'
-      let reqUrl = innertubeEndpoint
-      if (proxy.type === 'local') {
-        reqUrl = '/api/yt/youtubei/v1/player?prettyPrint=false'
-      } else if (proxy.type === 'public') {
-        reqUrl = proxy.prefix.includes('allorigins') || proxy.prefix.includes('codetabs')
-          ? proxy.prefix + encodeURIComponent(innertubeEndpoint)
-          : proxy.prefix + innertubeEndpoint
-      }
-
-      const playerResp = await fetchWithTimeout(
-        reqUrl,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)'
-          },
-          body: JSON.stringify({
-            context: {
-              client: {
-                clientName: 'ANDROID',
-                clientVersion: '20.10.38'
-              }
-            },
-            videoId
-          })
-        },
-        5000
-      )
-
-      if (!playerResp.ok) continue
-
-      const playerData = await playerResp.json()
-      const captions = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks
-
-      if (!captions || captions.length === 0) continue
-
-      const track = captions.find((t) => t.languageCode === lang) || captions[0]
-      let subUrl = track.baseUrl
-
-      let fetchSubUrl = subUrl
-      if (proxy.type === 'local') {
-        fetchSubUrl = subUrl.replace('https://www.youtube.com', '/api/yt')
-      } else if (proxy.type === 'public') {
-        fetchSubUrl = proxy.prefix.includes('allorigins') || proxy.prefix.includes('codetabs')
-          ? proxy.prefix + encodeURIComponent(subUrl)
-          : proxy.prefix + subUrl
-      }
-
-      const subResp = await fetchWithTimeout(fetchSubUrl, {}, 5000)
-      if (!subResp.ok) continue
-
-      const subXml = await subResp.text()
-      const transcript = parseTranscriptXml(subXml)
-
-      if (transcript.length > 0) {
-        return {
-          transcript,
-          language: track.languageCode || lang,
-          trackKind: track.kind === 'asr' ? 'Tự động tạo (ASR)' : 'Chính thức'
+      const proxiedUrl = proxyWrap(targetUrl)
+      const res = await fetchWithTimeout(proxiedUrl, {}, 5000)
+      if (res.ok) {
+        const xml = await res.text()
+        const transcript = parseUniversalSubtitle(xml)
+        if (transcript.length > 0) {
+          return {
+            transcript,
+            language: lang,
+            trackKind: 'YouTubeTranscript'
+          }
         }
       }
     } catch (err) {
-      // Continue next proxy
+      // Thử proxy tiếp theo
     }
   }
 
