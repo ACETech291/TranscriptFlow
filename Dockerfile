@@ -1,21 +1,13 @@
-FROM node:20-alpine
-
+FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Cài đặt dependencies
 COPY package*.json ./
-RUN npm ci
-
-# Sao chép toàn bộ mã nguồn
+RUN npm install
 COPY . .
-
-# Build ứng dụng frontend ra thư mục dist
 RUN npm run build
 
-# Thiết lập cổng và môi trường production cho Fly.io
-ENV NODE_ENV=production
-ENV PORT=8080
+FROM node:20-alpine
+WORKDIR /app
+RUN npm install -g serve
+COPY --from=builder /app/dist ./dist
 EXPOSE 8080
-
-# Khởi chạy server phục vụ static files và API backend tại cổng 8080
-CMD ["node", "server.js"]
+CMD ["serve", "-s", "dist", "-l", "8080"]
