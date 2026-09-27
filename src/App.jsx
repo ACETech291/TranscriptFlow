@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import UrlInput from './components/UrlInput'
 import TranscriptPanel from './components/TranscriptPanel'
 import VideoPlayer from './components/VideoPlayer'
+import VideoDownloader from './components/VideoDownloader'
 import Spinner from './components/Spinner'
 import EmptyState from './components/EmptyState'
 import Toast from './components/Toast'
@@ -66,7 +67,7 @@ export default function App() {
     setCurrentTime(state.playedSeconds)
   }, [])
 
-  const hasContent = videoId && (transcriptData || isLoading)
+  const hasContent = Boolean(videoId)
 
   return (
     <div className="min-h-screen gradient-bg flex flex-col">
@@ -128,8 +129,8 @@ export default function App() {
           <EmptyState />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] xl:grid-cols-[1.3fr_1fr] gap-8 h-[calc(100vh-320px)] min-h-[600px]">
-            {/* Left: Video Player */}
-            <div className="flex flex-col gap-5">
+            {/* Left: Video Player & Downloader */}
+            <div className="flex flex-col gap-5 overflow-y-auto pr-1">
               <VideoPlayer
                 videoId={videoId}
                 playerRef={playerRef}
@@ -138,30 +139,10 @@ export default function App() {
                 onPause={() => setIsPlaying(false)}
                 onProgress={handleProgress}
               />
-
-              {/* Error state */}
-              {error && !isLoading && (
-                <div className="glass rounded-2xl p-6 border border-[var(--color-error)]/20 animate-fade-in">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[var(--color-error)]/10 flex items-center justify-center shrink-0">
-                      <svg className="w-5 h-5 text-[var(--color-error)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-[var(--color-error)] mb-1">
-                        Không thể tải phụ đề
-                      </h3>
-                      <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                        {error}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <VideoDownloader videoId={videoId} />
             </div>
 
-            {/* Right: Transcript */}
+            {/* Right: Transcript or No Subtitle State */}
             <div className="glass-panel rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-xl shadow-black/20 border border-[var(--color-border)]">
               {isLoading ? (
                 <Spinner message="Đang tải phụ đề..." />
@@ -173,8 +154,27 @@ export default function App() {
                   trackKind={transcriptData.trackKind}
                   currentTime={currentTime}
                   onSeek={handleSeek}
+                  onOpenSettings={() => setIsSettingsOpen(true)}
                 />
-              ) : null}
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4 shadow-lg shadow-amber-500/10">
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m3 3 18 18M10.5 10.5v3m6-3v.75m-9 3.75h9.75M4.5 19.5h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5H6.75" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
+                    Video không có phụ đề
+                  </h3>
+                  <p className="text-sm text-[var(--color-text-secondary)] max-w-sm leading-relaxed mb-6">
+                    {error || 'Video này không có phụ đề hoặc tác giả đã tắt tính năng phụ đề. Vui lòng thử lại với video khác.'}
+                  </p>
+                  <div className="px-4 py-2.5 rounded-xl bg-white/[0.03] border border-[var(--color-border)] text-xs text-[var(--color-text-muted)] flex items-center gap-2 max-w-sm text-left">
+                    <span className="text-amber-400 shrink-0">💡</span>
+                    <span>Bạn vẫn có thể phát và xem video ở khung bên trái, hoặc dán link video khác để trích xuất phụ đề.</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

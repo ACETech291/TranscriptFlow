@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { formatTimestamp, groupTranscript } from '../utils'
-import ReactMarkdown from 'react-markdown'
 import { generateSummary, cleanTranscript } from '../aiService'
+import SummaryBox from './SummaryBox'
+import TranscriptItem from './TranscriptItem'
 
 /**
  * Scrollable transcript panel with clickable timestamps.
@@ -13,6 +14,7 @@ export default function TranscriptPanel({
   trackKind,
   currentTime,
   onSeek,
+  onOpenSettings,
 }) {
   const listRef = useRef(null)
   const activeRef = useRef(null)
@@ -119,13 +121,19 @@ export default function TranscriptPanel({
       }
       i += 2;
     }
+
+    if (result.length === 0 && text.trim()) {
+      result.push({ start: 0, text: text.trim() });
+    }
+
     return result;
   }
 
   const handleMagicClean = async () => {
     const apiKey = localStorage.getItem('groq_api_key')
     if (!apiKey) {
-      alert('Vui lòng nhập mã Groq API trong phần Cài đặt AI (góc trên bên phải) trước!')
+      if (onOpenSettings) onOpenSettings()
+      setCleanError('Vui lòng cài đặt mã Groq API Key trước để sử dụng tính năng AI.')
       return
     }
     
@@ -137,15 +145,10 @@ export default function TranscriptPanel({
       const resultText = await cleanTranscript(fullText, apiKey)
       const parsed = parseCleanedTranscript(resultText)
       
-      if (parsed.length === 0) {
-        throw new Error('AI failed to retain timestamps in the expected format.')
-      }
-      
       setCleanedTranscriptData(parsed)
       setViewMode('cleaned')
     } catch (err) {
-      setCleanError(err.message)
-      alert(`Lỗi dọn dẹp: ${err.message}`)
+      setCleanError(err.message || 'Không thể dọn dẹp phụ đề.')
     } finally {
       setIsCleaning(false)
     }
@@ -154,7 +157,8 @@ export default function TranscriptPanel({
   const handleSummarize = async () => {
     const apiKey = localStorage.getItem('groq_api_key')
     if (!apiKey) {
-      alert('Vui lòng nhập mã Groq API trong phần Cài đặt AI (góc trên bên phải) trước!')
+      if (onOpenSettings) onOpenSettings()
+      setSummaryError('Vui lòng cài đặt mã Groq API Key trước để sử dụng tính năng AI.')
       return
     }
     
@@ -167,7 +171,7 @@ export default function TranscriptPanel({
       const result = await generateSummary(fullText, apiKey)
       setSummary(result)
     } catch (err) {
-      setSummaryError(err.message)
+      setSummaryError(err.message || 'Không thể tạo bản tóm tắt.')
     } finally {
       setIsSummarizing(false)
     }
@@ -379,42 +383,39 @@ export default function TranscriptPanel({
         onMouseUp={handleMouseUp}
         className="flex-1 overflow-y-auto px-3 py-2"
       >
-        {/* Summary Box */}
-        {(isSummarizing || summary || summaryError) && (
-          <div className="mb-4 mt-2 px-3">
-            <div className="relative rounded-xl bg-gradient-to-br from-[var(--color-bg-card)] to-[var(--color-bg-card)] border border-[var(--color-accent)]/30 overflow-hidden">
-              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[var(--color-accent)] to-purple-500" />
-              <div className="p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <svg className="w-4 h-4 text-[var(--color-accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  </svg>
-                  <h3 className="text-sm font-bold text-[var(--color-text-primary)]">Tóm tắt AI</h3>
-                </div>
-                
-                {isSummarizing && (
-                  <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] animate-pulse">
-                    Đang tạo tóm tắt...
-                  </div>
-                )}
-                
-                {summaryError && (
-                  <div className="text-sm text-[var(--color-error)]">
-                    {summaryError}
-                  </div>
-                )}
-                
-                {summary && (
-                  <div className="prose prose-sm prose-invert max-w-none text-[var(--color-text-primary)] leading-relaxed
-                    prose-ul:my-2 prose-ul:pl-4 prose-li:my-1 prose-p:my-2 prose-headings:text-[var(--color-text-primary)]
-                    prose-strong:text-purple-400">
-                    <ReactMarkdown>{summary}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
-            </div>
+        {/* Cleaning Status Banner */}
+        {isCleaning && (
+          <div className="mx-3 mb-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300 flex items-center gap-2.5 animate-pulse">
+            <svg className="w-4 h-4 animate-spin shrink-0 text-purple-400" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            <span>Đang dọn dẹp phụ đề bằng AI (chuẩn hóa câu, sửa ngữ pháp, lọc từ đệm)...</span>
           </div>
         )}
+
+        {/* Cleaning Error */}
+        {cleanError && (
+          <div className="mx-3 mb-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center justify-between gap-2 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-sm">⚠️</span>
+              <span>{cleanError}</span>
+            </div>
+            <button
+              onClick={() => setCleanError(null)}
+              className="text-red-400/70 hover:text-red-400 text-xs font-bold px-1.5 py-0.5 rounded cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Summary Box */}
+        <SummaryBox 
+          isSummarizing={isSummarizing} 
+          summary={summary} 
+          summaryError={summaryError} 
+        />
 
         {filteredTranscript.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-sm text-[var(--color-text-muted)]">
@@ -424,52 +425,13 @@ export default function TranscriptPanel({
           filteredTranscript.map((item) => {
             const isActive = item.originalIndex === activeIndex
             return (
-              <button
+              <TranscriptItem
                 key={item.originalIndex}
+                item={item}
+                isActive={isActive}
+                onClick={handleTimestampClick}
                 ref={isActive ? activeRef : null}
-                onClick={() => handleTimestampClick(item.start)}
-                className={`
-                  group w-full text-left flex items-start gap-4 px-4 py-3.5 
-                  transition-all duration-300 ease-in-out cursor-pointer mb-1 border-l-2
-                  ${isActive
-                    ? 'bg-white/5 border-[var(--color-accent)] rounded-r-xl'
-                    : 'border-transparent hover:bg-white/[0.02] hover:border-white/20 rounded-r-xl'
-                  }
-                `}
-                title={`Jump to ${formatTimestamp(item.start)}`}
-              >
-                {/* Timestamp badge */}
-                <span
-                  className={`
-                    shrink-0 font-mono text-xs px-2.5 py-1 rounded-md mt-0.5
-                    transition-all duration-300
-                    ${isActive
-                      ? 'bg-[var(--color-accent)] text-zinc-950 font-bold shadow-md shadow-[var(--color-accent)]/20'
-                      : 'bg-[var(--color-bg-card)] border border-[var(--color-border)] text-[var(--color-text-muted)] group-hover:text-[var(--color-text-primary)] group-hover:border-[var(--color-text-muted)]'
-                    }
-                  `}
-                >
-                  {formatTimestamp(item.start)}
-                </span>
-
-                {/* Text */}
-                <span
-                  className={`
-                    text-[15px] leading-relaxed transition-colors duration-300 pr-2
-                    ${isActive
-                      ? 'text-[var(--color-text-primary)] font-medium'
-                      : 'text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)]'
-                    }
-                  `}
-                >
-                  {item.text}
-                </span>
-
-                {/* Active indicator dot */}
-                {isActive && (
-                  <span className="shrink-0 mt-2.5 ml-auto w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent-glow)]" />
-                )}
-              </button>
+              />
             )
           })
         )}
