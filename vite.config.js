@@ -262,7 +262,7 @@ function transcriptApiPlugin() {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(), transcriptApiPlugin()],
-  base: '/TranscriptFlow/',
+  base: process.env.GITHUB_PAGES ? '/TranscriptFlow/' : '/',
   server: {
     proxy: {
       '/api/yt': {
