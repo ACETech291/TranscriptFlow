@@ -43,7 +43,7 @@ export default function Toast({ message, type = 'error', duration = 5000, onClos
   return (
     <div
       className={`
-        fixed top-6 right-6 z-50 max-w-md
+        fixed top-4 right-4 left-4 sm:left-auto sm:top-6 sm:right-6 z-50 max-w-md
         ${isLeaving ? 'animate-toast-out' : 'animate-toast-in'}
       `}
     >

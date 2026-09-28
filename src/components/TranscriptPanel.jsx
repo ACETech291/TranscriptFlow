@@ -208,16 +208,16 @@ export default function TranscriptPanel({
     <div className="flex flex-col h-full animate-fade-in bg-black/20">
       {/* Header */}
       <div className="px-5 pt-5 pb-3 border-b border-white/10 bg-white/[0.02] backdrop-blur-md z-10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 shrink-0">
+            <h2 className="text-lg font-bold text-[var(--color-text-primary)] whitespace-nowrap">
               Phụ đề
             </h2>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/20">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[var(--color-accent)]/15 text-[var(--color-accent)] border border-[var(--color-accent)]/20 whitespace-nowrap">
               {trackKind}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             
             {/* View Toggle (Only show if cleaned data exists) */}
             {cleanedTranscriptData && (

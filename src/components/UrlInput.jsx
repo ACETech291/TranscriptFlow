@@ -64,7 +64,7 @@ export default function UrlInput({ onFetch, isLoading }) {
             onBlur={() => setIsFocused(false)}
             onKeyDown={handleKeyDown}
             placeholder="Dán đường dẫn YouTube vào đây..."
-            className="flex-1 bg-transparent text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] text-base font-medium outline-none py-2.5 px-2"
+            className="flex-1 min-w-0 bg-transparent text-[var(--color-text-primary)] placeholder-[var(--color-text-muted)] text-base font-medium outline-none py-2.5 px-2"
             autoComplete="off"
             spellCheck={false}
           />
@@ -88,8 +88,8 @@ export default function UrlInput({ onFetch, isLoading }) {
             type="submit"
             disabled={isLoading || !url.trim()}
             className={`
-              flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm
-              transition-all duration-200 cursor-pointer
+              flex items-center gap-2 px-3 sm:px-5 py-2.5 rounded-xl font-semibold text-sm
+              transition-all duration-200 cursor-pointer shrink-0 whitespace-nowrap
               ${isLoading || !url.trim()
                 ? 'bg-[var(--color-bg-card)] text-[var(--color-text-muted)] cursor-not-allowed'
                 : 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-zinc-950 shadow-lg shadow-white/10 hover:shadow-white/20 active:scale-[0.97]'
@@ -99,14 +99,14 @@ export default function UrlInput({ onFetch, isLoading }) {
             {isLoading ? (
               <>
                 <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                <span>Đang lấy...</span>
+                <span className="hidden sm:inline">Đang lấy...</span>
               </>
             ) : (
               <>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                 </svg>
-                <span>Lấy phụ đề</span>
+                <span className="hidden sm:inline">Lấy phụ đề</span>
               </>
             )}
           </button>

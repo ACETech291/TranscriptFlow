@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import UrlInput from './components/UrlInput'
 import TranscriptPanel from './components/TranscriptPanel'
 import VideoPlayer from './components/VideoPlayer'
@@ -23,6 +23,20 @@ export default function App() {
 
   const showToast = (message, type = 'error') => {
     setToast({ message, type, key: Date.now() })
+  }
+
+  const [showScrollTop, setShowScrollTop] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400)
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleFetch = useCallback(async (extractedVideoId) => {
@@ -82,8 +96,8 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="border-b border-[var(--color-border)] glass-subtle sticky top-0 z-40">
-        <div className="max-w-[1600px] mx-auto px-6 sm:px-8 lg:px-12 py-5">
+      <header className="border-b border-[var(--color-border)] glass-subtle relative lg:sticky lg:top-0 z-40">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-5">
           <div className="flex items-center justify-between mb-6">
             {/* Logo */}
             <div className="flex items-center gap-3">
@@ -124,13 +138,14 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 max-w-[1600px] mx-auto w-full px-6 sm:px-8 lg:px-12 py-8">
+      <main className="flex-1 max-w-[1600px] mx-auto w-full px-4 sm:px-8 lg:px-12 py-8">
         {!hasContent ? (
           <EmptyState />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] xl:grid-cols-[1.3fr_1fr] gap-8 h-[calc(100vh-320px)] min-h-[600px]">
-            {/* Left: Video Player & Downloader */}
-            <div className="flex flex-col gap-5 overflow-y-auto pr-1">
+          <div className="flex flex-col lg:grid lg:grid-cols-[1.2fr_1fr] xl:grid-cols-[1.3fr_1fr] lg:grid-rows-[auto_minmax(0,1fr)] gap-6 lg:gap-8 h-auto lg:h-[calc(100vh-320px)] lg:min-h-[600px]">
+            
+            {/* Left: Video Player */}
+            <div className="sticky top-0 sm:top-2 z-[60] lg:static shadow-2xl lg:shadow-none rounded-2xl bg-black w-full self-start lg:col-start-1 lg:row-start-1">
               <VideoPlayer
                 videoId={videoId}
                 playerRef={playerRef}
@@ -139,11 +154,15 @@ export default function App() {
                 onPause={() => setIsPlaying(false)}
                 onProgress={handleProgress}
               />
+            </div>
+
+            {/* Left: Video Downloader */}
+            <div className="lg:col-start-1 lg:row-start-2 lg:overflow-y-auto lg:pr-1 min-h-0">
               <VideoDownloader videoId={videoId} />
             </div>
 
             {/* Right: Transcript or No Subtitle State */}
-            <div className="glass-panel rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-xl shadow-black/20 border border-[var(--color-border)]">
+            <div className="glass-panel rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-xl shadow-black/20 border border-[var(--color-border)] lg:col-start-2 lg:row-start-1 lg:row-span-2">
               {isLoading ? (
                 <Spinner message="Đang tải phụ đề..." />
               ) : transcriptData ? (
@@ -179,6 +198,20 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Scroll to Top Button (Mobile) */}
+      <button
+        onClick={scrollToTop}
+        className={`
+          fixed bottom-6 right-6 z-50 p-3 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-zinc-950 shadow-xl shadow-[var(--color-accent)]/20 transition-all duration-300 lg:hidden cursor-pointer
+          ${showScrollTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}
+        `}
+        aria-label="Cuộn lên đầu"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+        </svg>
+      </button>
 
       {/* Footer */}
       <footer className="border-t border-[var(--color-border)] py-4 mt-auto">

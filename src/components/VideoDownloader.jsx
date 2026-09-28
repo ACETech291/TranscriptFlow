@@ -130,9 +130,9 @@ export default function VideoDownloader({ videoId }) {
               {data?.combined?.map((f) => (
                 <div
                   key={`combined-${f.itag}`}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20 hover:border-emerald-500/40 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20 hover:border-emerald-500/40 transition-colors"
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-emerald-500 text-zinc-950">
                       {f.quality}
                     </span>
@@ -154,7 +154,7 @@ export default function VideoDownloader({ videoId }) {
                   <button
                     onClick={() => handleDownload(f, 'mp4')}
                     disabled={downloadingItag === f.itag}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs flex justify-center items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 cursor-pointer disabled:opacity-50 w-full sm:w-auto shrink-0"
                   >
                     {downloadingItag === f.itag ? (
                       <span className="animate-pulse">Đang tải...</span>
@@ -174,9 +174,9 @@ export default function VideoDownloader({ videoId }) {
               {data?.videoFormats?.map((f) => (
                 <div
                   key={`video-${f.itag}`}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-[var(--color-border)] hover:bg-white/[0.05] transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-xl bg-white/[0.02] border border-[var(--color-border)] hover:bg-white/[0.05] transition-colors"
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                     <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white/10 text-[var(--color-text-primary)]">
                       {f.quality}
                     </span>
@@ -210,7 +210,7 @@ export default function VideoDownloader({ videoId }) {
                   <button
                     onClick={() => handleDownload(f, f.container || 'mp4')}
                     disabled={downloadingItag === f.itag}
-                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium text-xs flex justify-center items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 w-full sm:w-auto shrink-0"
                   >
                     {downloadingItag === f.itag ? (
                       <span className="animate-pulse">Đang tải...</span>
@@ -253,9 +253,9 @@ export default function VideoDownloader({ videoId }) {
               {data?.audioFormats?.map((f, idx) => (
                 <div
                   key={`audio-${f.itag}`}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-[var(--color-border)] hover:bg-white/[0.05] transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-xl bg-white/[0.02] border border-[var(--color-border)] hover:bg-white/[0.05] transition-colors"
                 >
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                     <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                       {f.quality}
                     </span>
@@ -274,7 +274,7 @@ export default function VideoDownloader({ videoId }) {
                   <button
                     onClick={() => handleDownload(f, 'm4a')}
                     disabled={downloadingItag === f.itag}
-                    className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-semibold text-xs flex justify-center items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 w-full sm:w-auto shrink-0"
                   >
                     {downloadingItag === f.itag ? (
                       <span className="animate-pulse">Đang tải...</span>
