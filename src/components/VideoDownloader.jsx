@@ -48,31 +48,12 @@ export default function VideoDownloader({ videoId }) {
     if (!format.url) return
     setDownloadingItag(format.itag)
 
-    const cleanTitle = (data?.title || 'video').slice(0, 80).replace(/[/\\?%*:|"<>]/g, '_').trim()
-    const filename = `${cleanTitle}.${ext}`
+    const streamUrl = format.url
+    const videoTitle = data?.title || 'video'
+    const targetExt = format.ext || ext || format.container || 'mp4'
+    const clientParam = format.clientType ? `&client=${encodeURIComponent(format.clientType)}` : ''
 
-    if (format.isDirect) {
-      // 1. Luồng stream đã được proxy qua Invidious/Piped - Tải trực tiếp trên trình duyệt, không giới hạn 4.5MB
-      const a = document.createElement('a')
-      a.href = format.url
-      a.download = filename
-      a.target = '_blank'
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => setDownloadingItag(null), 2000)
-      return
-    }
-
-    // 2. Link tải cần qua proxy API (/api/download với client IOS User-Agent)
-    const downloadUrl = `/api/download?url=${encodeURIComponent(format.url)}&title=${encodeURIComponent(cleanTitle)}&ext=${ext}&client=${format.clientType || 'IOS'}`
-    const a = document.createElement('a')
-    a.href = downloadUrl
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    window.location.href = `/api/download?url=${encodeURIComponent(streamUrl)}&title=${encodeURIComponent(videoTitle)}&ext=${encodeURIComponent(targetExt)}${clientParam}`
 
     setTimeout(() => {
       setDownloadingItag(null)

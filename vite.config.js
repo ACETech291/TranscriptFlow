@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
 import { YoutubeTranscript } from 'youtube-transcript'
+import { Readable } from 'node:stream'
 
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return 'Không rõ'
@@ -199,6 +200,7 @@ function transcriptApiPlugin() {
             const targetUrl = url.searchParams.get('url')
             const rawTitle = url.searchParams.get('title') || 'video'
             const ext = url.searchParams.get('ext') || 'mp4'
+            const client = url.searchParams.get('client')
 
             if (!targetUrl) {
               res.statusCode = 400
@@ -206,12 +208,28 @@ function transcriptApiPlugin() {
               return
             }
 
-            const upstreamHeaders = {}
+            const decodedTargetUrl = decodeURIComponent(targetUrl)
+            const isGoogleVideo = decodedTargetUrl.includes('googlevideo.com') || decodedTargetUrl.includes('youtube.com')
+
+            let userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            if (isGoogleVideo) {
+              if (client === 'ANDROID_VR') {
+                userAgent = 'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12; Quest 3)'
+              } else {
+                userAgent = 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)'
+              }
+            }
+
+            const upstreamHeaders = {
+              'User-Agent': userAgent,
+              'Accept': '*/*'
+            }
+
             if (req.headers.range) {
               upstreamHeaders.range = req.headers.range
             }
 
-            const upstream = await fetch(decodeURIComponent(targetUrl), {
+            const upstream = await fetch(decodedTargetUrl, {
               headers: upstreamHeaders
             })
 
@@ -221,15 +239,28 @@ function transcriptApiPlugin() {
               return
             }
 
-            const cleanTitle = rawTitle.replace(/[/\\?%*:|"<>]/g, '_').trim()
-            const filename = `${cleanTitle}.${ext}`
+            let cleanTitle = rawTitle
+              .replace(/\p{Extended_Pictographic}/gu, '')
+              .replace(/[\uFE0E\uFE0F]/g, '')
+              .replace(/[\\/:*?"<>|'"`]/g, ' ')
+              // eslint-disable-next-line no-control-regex
+              .replace(/[\x00-\x1F\x7F]/g, '')
+              .replace(/\s+/g, ' ')
+              .trim()
+
+            if (cleanTitle.length > 120) {
+              cleanTitle = cleanTitle.slice(0, 120).trim()
+            }
+            if (!cleanTitle) cleanTitle = 'video'
+
+            const safeExt = ext.replace(/[^a-zA-Z0-9]/g, '') || 'mp4'
 
             res.statusCode = upstream.status
-            res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream')
             res.setHeader(
               'Content-Disposition',
-              `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+              `attachment; filename="${encodeURIComponent(cleanTitle)}.${safeExt}"; filename*=UTF-8''${encodeURIComponent(cleanTitle)}.${safeExt}`
             )
+            res.setHeader('Content-Type', safeExt === 'mp4' ? 'video/mp4' : (safeExt === 'm4a' ? 'audio/mp4' : 'audio/webm'))
 
             const cl = upstream.headers.get('content-length')
             if (cl) res.setHeader('Content-Length', cl)
@@ -237,13 +268,19 @@ function transcriptApiPlugin() {
               res.setHeader('Accept-Ranges', upstream.headers.get('accept-ranges'))
             }
 
-            const reader = upstream.body.getReader()
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-              res.write(value)
-            }
-            res.end()
+            const stream = Readable.fromWeb(upstream.body)
+            stream.pipe(res)
+
+            stream.on('error', () => {
+              if (!res.headersSent) {
+                res.statusCode = 500
+                res.end('Stream transfer error')
+              }
+            })
+
+            req.on('close', () => {
+              stream.destroy()
+            })
           } catch (err) {
             if (!res.headersSent) {
               res.statusCode = 500

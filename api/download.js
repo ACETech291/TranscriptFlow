@@ -1,3 +1,23 @@
+import { Readable } from 'node:stream'
+
+export function sanitizeTitle(rawTitle) {
+  if (!rawTitle) return 'video'
+  let clean = rawTitle
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\uFE0E\uFE0F]/g, '')
+    .replace(/[\\/:*?"<>|'"`]/g, ' ')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (clean.length > 120) {
+    clean = clean.slice(0, 120).trim()
+  }
+
+  return clean || 'video'
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -47,15 +67,15 @@ export default async function handler(req, res) {
       })
     }
 
-    const cleanTitle = title.replace(/[/\\?%*:|"<>]/g, '_').trim() || 'video'
-    const filename = `${cleanTitle}.${ext}`
+    const cleanTitle = sanitizeTitle(title)
+    const safeExt = (ext || 'mp4').replace(/[^a-zA-Z0-9]/g, '') || 'mp4'
 
     res.statusCode = upstream.status
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream')
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+      `attachment; filename="${encodeURIComponent(cleanTitle)}.${safeExt}"; filename*=UTF-8''${encodeURIComponent(cleanTitle)}.${safeExt}`
     )
+    res.setHeader('Content-Type', safeExt === 'mp4' ? 'video/mp4' : (safeExt === 'm4a' ? 'audio/mp4' : 'audio/webm'))
 
     const cl = upstream.headers.get('content-length')
     if (cl) res.setHeader('Content-Length', cl)
@@ -67,14 +87,20 @@ export default async function handler(req, res) {
       res.setHeader('Accept-Ranges', upstream.headers.get('accept-ranges'))
     }
 
-    // Pipe upstream body to response
-    const reader = upstream.body.getReader()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      res.write(value)
-    }
-    res.end()
+    // Pipe upstream stream to response
+    const stream = Readable.fromWeb(upstream.body)
+    stream.pipe(res)
+
+    stream.on('error', (err) => {
+      console.error('Download stream error:', err)
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Stream transfer error' })
+      }
+    })
+
+    req.on('close', () => {
+      stream.destroy()
+    })
   } catch (err) {
     if (!res.headersSent) {
       res.status(500).json({ error: err.message || 'Download failed' })
