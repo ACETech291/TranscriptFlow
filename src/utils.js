@@ -12,6 +12,9 @@ export function extractVideoId(url) {
 
   // Direct video ID (11 chars, alphanumeric + - _)
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed
+  if (trimmed.length === 12 && trimmed.startsWith('-') && /^[a-zA-Z0-9_-]{11}$/.test(trimmed.slice(1))) {
+    return trimmed.slice(1)
+  }
 
   try {
     // Try native URL parsing first
@@ -27,6 +30,9 @@ export function extractVideoId(url) {
     } else if (urlObj.hostname.includes('youtu.be')) {
       const match = urlObj.pathname.match(/^\/([a-zA-Z0-9_-]{11})/);
       if (match) v = match[1];
+    }
+    if (v && v.length === 12 && v.startsWith('-')) {
+      v = v.slice(1);
     }
     if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
   } catch (e) {

@@ -45,15 +45,13 @@ export default function VideoDownloader({ videoId }) {
   if (!videoId) return null
 
   const handleDownload = (format, ext = 'mp4') => {
-    if (!format.url) return
+    if (!format.itag) return
     setDownloadingItag(format.itag)
 
-    const streamUrl = format.url
     const videoTitle = data?.title || 'video'
     const targetExt = format.ext || ext || format.container || 'mp4'
-    const clientParam = format.clientType ? `&client=${encodeURIComponent(format.clientType)}` : ''
 
-    window.location.href = `/api/download?url=${encodeURIComponent(streamUrl)}&title=${encodeURIComponent(videoTitle)}&ext=${encodeURIComponent(targetExt)}${clientParam}`
+    window.location.href = `/api/download?videoId=${encodeURIComponent(videoId)}&itag=${format.itag}&title=${encodeURIComponent(videoTitle)}&ext=${encodeURIComponent(targetExt)}`
 
     setTimeout(() => {
       setDownloadingItag(null)
