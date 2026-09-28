@@ -96,7 +96,7 @@ async function callGroqChat({ apiKey, model, messages, temperature = 0.5, maxTok
     const status = response.status
 
     if (status === 401) {
-      throw new Error('Mã Groq API không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại trong Cài đặt.')
+      throw new Error(`Mã Groq API không đúng, đã hết hạn, hoặc Model bị khóa (401). Chi tiết: ${rawMsg}`)
     }
 
     if (status === 429) {

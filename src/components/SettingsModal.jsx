@@ -8,6 +8,16 @@ export default function SettingsModal({ isOpen, onClose }) {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
 
+  const [availableModels, setAvailableModels] = useState([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+
+  const RECOMMENDED_MODELS = [
+    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (Nhanh & Ổn định nhất cho Free)' },
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Thông minh nhất - Dễ bị khóa ở bản Free)' },
+    { id: 'gemma2-9b-it', label: 'Gemma 2 9B (Tốt - Ổn định)' },
+    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B (Tốt cho video siêu dài)' }
+  ]
+
   useEffect(() => {
     const storedKey = localStorage.getItem('groq_api_key')
     if (storedKey) setApiKey(storedKey)
@@ -15,6 +25,73 @@ export default function SettingsModal({ isOpen, onClose }) {
     const storedModel = localStorage.getItem('groq_model')
     if (storedModel) setModel(storedModel)
   }, [isOpen])
+
+  useEffect(() => {
+    if (apiKey && apiKey.trim().length > 15) {
+      const key = apiKey.trim()
+      setFetchingModels(true)
+      
+      // Try to load cached working models for this key
+      const cached = localStorage.getItem(`working_models_${key}`)
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached)
+          if (parsed && parsed.length > 0) {
+            setAvailableModels(parsed)
+            if (!parsed.includes(model)) setModel(parsed[0])
+            setFetchingModels(false)
+            return
+          }
+        } catch (e) {}
+      }
+
+      fetch('https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${key}` }
+      })
+        .then((res) => res.json())
+        .then(async (data) => {
+          if (data && data.data) {
+            const rawModels = data.data
+              .map((m) => m.id)
+              .filter(m => {
+                const lower = m.toLowerCase()
+                if (lower.includes('whisper') || lower.includes('vision') || lower.includes('guard') || lower.includes('orpheus') || lower.includes('allam') || lower.includes('openai')) return false
+                return lower.includes('llama') || lower.includes('gemma') || lower.includes('mixtral') || lower.includes('qwen') || lower.includes('deepseek')
+              })
+              .sort()
+            
+            // Background check: test each model to see if it actually works for this tier
+            const working = []
+            for (const m of rawModels) {
+              try {
+                const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ model: m, messages: [{role: 'user', content: 'hi'}], max_tokens: 1 })
+                })
+                if (res.ok) {
+                  working.push(m)
+                  setAvailableModels([...working]) // progressively update UI
+                  if (working.length === 1) setModel(m) // auto-select the first working one
+                }
+              } catch (e) {}
+              // small delay to prevent rate limit
+              await new Promise(r => setTimeout(r, 200))
+            }
+            
+            if (working.length > 0) {
+              localStorage.setItem(`working_models_${key}`, JSON.stringify(working))
+            } else {
+              setAvailableModels(rawModels) // fallback to all if all failed or network error
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => setFetchingModels(false))
+    } else {
+      setAvailableModels([])
+    }
+  }, [apiKey])
 
   const handleTest = async () => {
     if (!apiKey.trim()) {
@@ -27,7 +104,11 @@ export default function SettingsModal({ isOpen, onClose }) {
       await testGroqConnection(apiKey.trim(), model)
       setTestResult({ ok: true, msg: 'Kết nối thành công! Model AI đã sẵn sàng hoạt động.' })
     } catch (err) {
-      setTestResult({ ok: false, msg: err.message || 'Không thể kết nối đến máy chủ Groq.' })
+      if (err.message.includes('401')) {
+        setTestResult({ ok: false, msg: 'Lỗi 401: API Key của bạn không được phép dùng Model này (thường do tài khoản Free). Hãy chọn Llama 3.1 8B!' })
+      } else {
+        setTestResult({ ok: false, msg: err.message || 'Không thể kết nối đến máy chủ Groq.' })
+      }
     } finally {
       setTesting(false)
     }
@@ -54,7 +135,7 @@ export default function SettingsModal({ isOpen, onClose }) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-2xl p-6 w-full max-w-md shadow-2xl relative overflow-hidden">
         {/* Decorative gradient */}
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[var(--color-accent)] to-purple-500" />
@@ -112,8 +193,9 @@ export default function SettingsModal({ isOpen, onClose }) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[var(--color-text-primary)] mb-1.5">
+            <label className="flex items-center justify-between text-xs font-semibold text-[var(--color-text-primary)] mb-1.5">
               Mô hình AI (Groq Model)
+              {fetchingModels && <span className="text-xs text-[var(--color-accent)] animate-pulse">Đang tải danh sách...</span>}
             </label>
             <select
               value={model}
@@ -123,13 +205,27 @@ export default function SettingsModal({ isOpen, onClose }) {
               }}
               className="w-full bg-[var(--color-bg-input)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-xs text-[var(--color-text-primary)] focus:border-[var(--color-accent)] outline-none transition-colors cursor-pointer"
             >
-              <option value="llama-3.3-70b-versatile">
-                Llama 3.3 70B (Versatile) — Chất lượng cao nhất
-              </option>
-              <option value="llama-3.1-8b-instant">
-                Llama 3.1 8B (Instant) — Siêu tốc, khuyên dùng khi cần ổn định
-              </option>
+              <optgroup label="Khuyên dùng (Độ ổn định cao)">
+                {RECOMMENDED_MODELS.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </optgroup>
+              
+              {availableModels.length > 0 && (
+                <optgroup label="Các model khác (Lấy từ Groq)">
+                  {availableModels
+                    .filter(m => !RECOMMENDED_MODELS.find(rm => rm.id === m))
+                    .map(m => (
+                      <option key={m} value={m}>{m}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
+            {availableModels.length > 0 && (
+              <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                Đã tự động loại bỏ các model rác, giữ lại các model xử lý ngôn ngữ.
+              </p>
+            )}
           </div>
 
           {/* Test connection row */}

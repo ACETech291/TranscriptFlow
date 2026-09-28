@@ -203,7 +203,7 @@ export default function App() {
       <button
         onClick={scrollToTop}
         className={`
-          fixed bottom-6 right-6 z-50 p-3 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-zinc-950 shadow-xl shadow-[var(--color-accent)]/20 transition-all duration-300 lg:hidden cursor-pointer
+          fixed bottom-6 right-6 z-[70] p-3 rounded-full bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-zinc-950 shadow-xl shadow-[var(--color-accent)]/20 transition-all duration-300 lg:hidden cursor-pointer
           ${showScrollTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}
         `}
         aria-label="Cuộn lên đầu"
